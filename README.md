@@ -11,6 +11,16 @@ A simple CLI tool to make Excalidraw SVG exports **theme-aware** (supporting aut
 
 ---
 
+### Example
+
+| Before (`test.svg`) | After (`test.theme.svg`) |
+|---|---|
+| ![Original Excalidraw export](test.svg) | ![Theme-aware version](test.theme.svg) |
+
+> The themed version adapts to your OS/browser color scheme. Elements with custom background colors (e.g. yellow, green) keep their original text color to preserve readability.
+
+---
+
 ### Installation
 
 1. Ensure you have [Rust and Cargo](https://rustup.rs/) installed.
