@@ -3,6 +3,9 @@ use std::fs;
 use std::process;
 use regex::Regex;
 
+/// Default Excalidraw colors that get themed
+const DEFAULT_COLORS: &[&str] = &["#1e1e1e", "#ffffff"];
+
 fn main() {
     let args: Vec<String> = env::args().collect();
 
@@ -39,22 +42,13 @@ fn main() {
     };
 
     // 3. Remove the hardcoded background rectangle
-    // Note the double ## here to handle the internal # symbols
     let re_bg = Regex::new(r##"<rect x="0" y="0" [^>]*fill="#ffffff"[^>]*></rect>"##).unwrap();
     processed = re_bg.replace_all(&processed, "").to_string();
 
-    // 4. Replace Hex codes with CSS Variables
-    let replacements = [
-        (r##"fill="#1e1e1e""##, r#"fill="var(--stroke)""#),
-        (r##"stroke="#1e1e1e""##, r#"stroke="var(--stroke)""#),
-        (r##"fill="#ffffff""##, r#"fill="var(--fill)""#),
-        (r##"stroke="#ffffff""##, r#"stroke="var(--fill)""#),
-    ];
-
-    for (pattern, replacement) in replacements {
-        let re = Regex::new(pattern).unwrap();
-        processed = re.replace_all(&processed, replacement).to_string();
-    }
+    // 4. Replace Hex codes with CSS Variables, but skip groups that contain
+    //    custom (non-default) colors to preserve readable contrast.
+    let skip_ranges = find_custom_color_group_ranges(&processed);
+    processed = apply_color_replacements(&processed, &skip_ranges);
 
     // 5. Write the output
     let output_path = if input_path.ends_with(".svg") {
@@ -66,4 +60,75 @@ fn main() {
     fs::write(&output_path, processed).expect("Could not write file");
 
     println!("Success! Created: {}", output_path);
+}
+
+/// Check if a color value is a non-default (custom) color
+fn is_custom_color(value: &str) -> bool {
+    let v = value.to_lowercase();
+    !DEFAULT_COLORS.contains(&v.as_str()) && v != "none" && v != "transparent"
+}
+
+/// Check if any descendant of the node has a custom fill or stroke color
+fn subtree_has_custom_colors(node: &roxmltree::Node) -> bool {
+    node.descendants().any(|desc| {
+        desc.is_element()
+            && ["fill", "stroke"]
+                .iter()
+                .any(|&attr| desc.attribute(attr).is_some_and(|v| is_custom_color(v)))
+    })
+}
+
+/// Find byte ranges of top-level `<g>` groups that contain custom colors.
+/// Elements in these groups are skipped during replacement to avoid poor contrast
+/// (e.g., white text on a yellow background in dark mode).
+fn find_custom_color_group_ranges(svg_content: &str) -> Vec<(usize, usize)> {
+    let doc = match roxmltree::Document::parse(svg_content) {
+        Ok(doc) => doc,
+        Err(_) => return Vec::new(), // fall back to replacing everything
+    };
+
+    let root = doc.root_element();
+    root.children()
+        .filter(|child| child.is_element() && child.tag_name().name() == "g")
+        .filter(|g| subtree_has_custom_colors(g))
+        .map(|g| {
+            let r = g.range();
+            (r.start, r.end)
+        })
+        .collect()
+}
+
+/// Apply color replacements, skipping byte positions within skip_ranges
+fn apply_color_replacements(input: &str, skip_ranges: &[(usize, usize)]) -> String {
+    const REPLACEMENTS: &[(&str, &str)] = &[
+        ("fill=\"#1e1e1e\"", "fill=\"var(--stroke)\""),
+        ("stroke=\"#1e1e1e\"", "stroke=\"var(--stroke)\""),
+        ("fill=\"#ffffff\"", "fill=\"var(--fill)\""),
+        ("stroke=\"#ffffff\"", "stroke=\"var(--fill)\""),
+    ];
+
+    let bytes = input.as_bytes();
+    let mut result = String::with_capacity(input.len());
+    let mut pos = 0;
+
+    while pos < bytes.len() {
+        let in_skip = skip_ranges.iter().any(|&(s, e)| pos >= s && pos < e);
+
+        if !in_skip {
+            if let Some(&(pattern, replacement)) = REPLACEMENTS
+                .iter()
+                .find(|&&(pat, _)| bytes[pos..].starts_with(pat.as_bytes()))
+            {
+                result.push_str(replacement);
+                pos += pattern.len();
+                continue;
+            }
+        }
+
+        let c = input[pos..].chars().next().unwrap();
+        result.push(c);
+        pos += c.len_utf8();
+    }
+
+    result
 }
