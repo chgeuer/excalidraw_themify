@@ -79,8 +79,8 @@ fn subtree_has_custom_colors(node: &roxmltree::Node) -> bool {
 }
 
 /// Find byte ranges of top-level `<g>` groups that contain custom colors.
-/// Elements in these groups are skipped during replacement to avoid poor contrast
-/// (e.g., white text on a yellow background in dark mode).
+/// Also includes the next sibling `<g>` group after each custom-colored group,
+/// since Excalidraw places bound text in a separate sibling group.
 fn find_custom_color_group_ranges(svg_content: &str) -> Vec<(usize, usize)> {
     let doc = match roxmltree::Document::parse(svg_content) {
         Ok(doc) => doc,
@@ -88,14 +88,30 @@ fn find_custom_color_group_ranges(svg_content: &str) -> Vec<(usize, usize)> {
     };
 
     let root = doc.root_element();
-    root.children()
+    let groups: Vec<_> = root
+        .children()
         .filter(|child| child.is_element() && child.tag_name().name() == "g")
-        .filter(|g| subtree_has_custom_colors(g))
-        .map(|g| {
+        .collect();
+
+    let mut skip_ranges = Vec::new();
+    let mut skip_next = false;
+
+    for g in &groups {
+        if subtree_has_custom_colors(g) {
             let r = g.range();
-            (r.start, r.end)
-        })
-        .collect()
+            skip_ranges.push((r.start, r.end));
+            skip_next = true;
+        } else if skip_next {
+            // The sibling text group right after a custom-colored shape group
+            let r = g.range();
+            skip_ranges.push((r.start, r.end));
+            skip_next = false;
+        } else {
+            skip_next = false;
+        }
+    }
+
+    skip_ranges
 }
 
 /// Apply color replacements, skipping byte positions within skip_ranges
