@@ -19,6 +19,10 @@ A simple CLI tool to make Excalidraw SVG exports **theme-aware** (supporting aut
 
 > The themed version adapts to your OS/browser color scheme. Elements with custom background colors (e.g. yellow, green) keep their original text color to preserve readability.
 
+| Light mode | Dark mode |
+|---|---|
+| ![Light mode screenshot](img/bright.png) | ![Dark mode screenshot](img/dark.png) |
+
 ---
 
 ### Installation
