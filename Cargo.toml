@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+arboard = "3"
 regex = "1.10"
 roxmltree = "0.20"
 

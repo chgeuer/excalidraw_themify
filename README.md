@@ -48,14 +48,21 @@ cp target/release/themeify /usr/local/bin/
 
 ### Usage
 
-Pass the path of an Excalidraw SVG export to the tool:
+**File mode** – pass the path of an Excalidraw SVG export to the tool:
 
 ```bash
-themeify drawing.svg
-
+excalidraw_themify drawing.svg
 ```
 
 **Output:** A new file named `drawing.theme.svg` will be created in the same directory.
+
+**Clipboard watch mode** – continuously monitors the clipboard and automatically themes any Excalidraw SVG that is copied:
+
+```bash
+excalidraw_themify --watch-clipboard
+```
+
+This is useful when working with the [Excalidraw](https://excalidraw.com/) web app: copy an SVG from Excalidraw, and by the time you paste it into your editor, it will already be themed for light/dark mode.
 
 ---
 

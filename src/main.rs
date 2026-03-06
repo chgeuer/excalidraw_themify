@@ -1,6 +1,8 @@
 use std::env;
 use std::fs;
 use std::process;
+use std::thread;
+use std::time::Duration;
 use regex::Regex;
 
 /// Default Excalidraw colors that get themed
@@ -10,13 +12,62 @@ fn main() {
     let args: Vec<String> = env::args().collect();
 
     if args.len() < 2 {
-        eprintln!("Usage: themeify <input_file.svg>");
+        eprintln!("Usage: excalidraw_themify <input_file.svg>");
+        eprintln!("       excalidraw_themify --watch-clipboard");
         process::exit(1);
     }
 
-    let input_path = &args[1];
-    let content = fs::read_to_string(input_path).expect("Could not read file");
+    if args[1] == "--watch-clipboard" {
+        watch_clipboard();
+    } else {
+        transform_file(&args[1]);
+    }
+}
 
+fn transform_file(input_path: &str) {
+    let content = fs::read_to_string(input_path).expect("Could not read file");
+    let processed = transform_svg(&content);
+
+    let output_path = if input_path.ends_with(".svg") {
+        input_path.replace(".svg", ".theme.svg")
+    } else {
+        format!("{}.theme.svg", input_path)
+    };
+
+    fs::write(&output_path, processed).expect("Could not write file");
+    println!("Success! Created: {}", output_path);
+}
+
+/// Returns true if the content looks like an Excalidraw SVG that hasn't been themed yet.
+fn is_excalidraw_svg(content: &str) -> bool {
+    content.contains("<!-- svg-source:excalidraw -->") && !content.contains("var(--stroke)")
+}
+
+fn watch_clipboard() {
+    let mut clipboard = arboard::Clipboard::new().expect("Could not access clipboard");
+    let mut last_content = String::new();
+
+    eprintln!("Watching clipboard for Excalidraw SVGs... (Ctrl+C to stop)");
+
+    loop {
+        if let Ok(text) = clipboard.get_text() {
+            if text != last_content && is_excalidraw_svg(&text) {
+                let themed = transform_svg(&text);
+                match clipboard.set_text(&themed) {
+                    Ok(()) => eprintln!("Themed an Excalidraw SVG in clipboard."),
+                    Err(e) => eprintln!("Failed to update clipboard: {}", e),
+                }
+                last_content = themed;
+            } else {
+                last_content = text;
+            }
+        }
+        thread::sleep(Duration::from_millis(500));
+    }
+}
+
+/// Transform an Excalidraw SVG to support light/dark themes.
+fn transform_svg(content: &str) -> String {
     // 1. Prepare the CSS Style block
     let style_block = r#"
     <style>
@@ -38,7 +89,7 @@ fn main() {
         content.replace("<defs>", &format!("<defs>{}", style_block))
     } else {
         let re_svg_tag = Regex::new(r"(<svg[^>]*>)").unwrap();
-        re_svg_tag.replace(&content, format!("$1{}", style_block)).to_string()
+        re_svg_tag.replace(content, format!("$1{}", style_block)).to_string()
     };
 
     // 3. Remove the hardcoded background rectangle
@@ -50,16 +101,7 @@ fn main() {
     let skip_ranges = find_custom_color_group_ranges(&processed);
     processed = apply_color_replacements(&processed, &skip_ranges);
 
-    // 5. Write the output
-    let output_path = if input_path.ends_with(".svg") {
-        input_path.replace(".svg", ".theme.svg")
-    } else {
-        format!("{}.theme.svg", input_path)
-    };
-
-    fs::write(&output_path, processed).expect("Could not write file");
-
-    println!("Success! Created: {}", output_path);
+    processed
 }
 
 /// Check if a color value is a non-default (custom) color
